@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Session, Record, ViewState, Drink, Order, DeviceStatus, PricingConfig, Expense, Purchase, InventorySnapshot, DrinkSize, DebtItem, DailyClosing, SystemState, OperationLog, InternetCard, BankAccount, OrderType, Transaction, DayCycle, MonthlyArchive, Customer, AuditLogItem, Discount, PlaceLoan, CashTransfer, LedgerEntry, TransactionType, FinancialChannel, PeriodLock } from './types';
-import { generateId, calculateOrdersTotal, calculateOrdersCost, getCurrentTimeOnly, mergeDateAndTime, getLocalDate, getDaysInMonth, getDayOfMonth, formatCurrency, formatDuration, getArabicMonthName, calculateSessionSegments } from './utils';
+import { generateId, calculateOrdersTotal, calculateOrdersCost, getCurrentTimeOnly, mergeDateAndTime, getLocalDate, getDaysInMonth, getDayOfMonth, formatCurrency, formatDuration, getArabicMonthName, calculateSessionSegments, addDays } from './utils';
 import { calcRecordFinancials, calculateCustomerTransaction } from './accounting';
 import { migrateLegacyDataToLedger, validateTransaction, createEntry, getLedgerTotals, calcLedgerInventory, calcEndDayPreviewFromLedger, checkLedgerIntegrity, validateOperation, GLOBAL_PARTNERS, getLedgerBalance } from './accounting_core';
 
@@ -479,13 +479,14 @@ const App: React.FC = () => {
 
   const onInventoryAction = () => {
       try {
-          const start = systemState.currentMonth + '-01'; 
-          const end = getLocalDate(); 
+          const end = getLocalDate();
+          const lastSnapshot = inventorySnapshots[inventorySnapshots.length - 1];
+          const start = lastSnapshot ? addDays(lastSnapshot.periodEnd, 1) : systemState.currentMonth + '-01';
           setInventoryRange({start, end});
-          setElecReadingInput(''); 
-          
-          const preview = calcLedgerInventory(ledger, start, end, [], pricingConfig);
-          
+          setElecReadingInput('');
+
+          const preview = calcLedgerInventory(ledger, start, end, expenses, pricingConfig);
+
           if (preview) {
              setInventoryPreview(preview);
              setModals(m => ({...m, inventory: true}));
@@ -903,7 +904,7 @@ const App: React.FC = () => {
       );
 
       const updatedLedger = [elecEntry, ...ledger];
-      const finalResult = calcLedgerInventory(updatedLedger, inventoryRange.start, inventoryRange.end, [], pricingConfig);
+      const finalResult = calcLedgerInventory(updatedLedger, inventoryRange.start, inventoryRange.end, expenses, pricingConfig);
 
       const snap: InventorySnapshot = { 
           ...finalResult,

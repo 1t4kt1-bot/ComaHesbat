@@ -182,6 +182,23 @@ export const getLocalDate = (): string => {
   return local.toISOString().slice(0, 10);
 };
 
+export const addDays = (date: string, days: number): string => {
+  const base = new Date(date);
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
+};
+
+export const calculateDaysBetween = (startDate: string, endDate: string): number => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+  const diff = end.getTime() - start.getTime();
+  if (diff < 0) return 0;
+
+  return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1; // Inclusive of the start day
+};
+
 export const mergeDateAndTime = (baseDateIso: string, timeString: string): string => {
   const date = new Date(baseDateIso);
   const [hours, minutes] = timeString.split(':').map(Number);

@@ -1,5 +1,5 @@
 import { LedgerEntry, TransactionType, FinancialChannel, Record, Expense, Purchase, CashTransfer, DebtItem, PlaceLoan, BankAccount, InventorySnapshot, PricingConfig, DayCycle, PeriodLock } from './types';
-import { generateId, getLocalDate, getDaysInMonth, getAllDaysOfMonth } from './utils';
+import { generateId, getLocalDate, getDaysInMonth, getAllDaysOfMonth, calculateDaysBetween } from './utils';
 
 // --- PARTNERS CONSTANT (Matching App.tsx) ---
 export const GLOBAL_PARTNERS = [
@@ -215,6 +215,15 @@ export const calcLedgerInventory = (
     pricingConfig: PricingConfig
 ): InventorySnapshot => {
     const periodEntries = ledger.filter(e => e.dateKey >= startDate && e.dateKey <= endDate);
+
+    const fixedExpenses = (expenses || []).filter(e => e.type === 'fixed');
+    const daysInPeriod = calculateDaysBetween(startDate, endDate);
+    const fixedExpenseDetails = fixedExpenses.map(e => {
+        const dailyShare = parseFloat((e.amount / 30).toFixed(2));
+        const periodShare = parseFloat((dailyShare * daysInPeriod).toFixed(2));
+        return { name: e.name, amount: e.amount, dailyShare, periodShare };
+    });
+    const fixedExpensesTotal = fixedExpenseDetails.reduce((sum, item) => sum + item.periodShare, 0);
     
     // 1. Incomes by Channel
     const cashIncome = periodEntries
@@ -227,12 +236,14 @@ export const calcLedgerInventory = (
     // 2. Expenses by Channel (Include Electricity)
     const expenseTypes = [TransactionType.EXPENSE_OPERATIONAL, TransactionType.EXPENSE_PURCHASE, TransactionType.LOAN_REPAYMENT, TransactionType.EXPENSE_ELECTRICITY];
     
-    const cashExpenses = periodEntries
+    const baseCashExpenses = periodEntries
         .filter(e => e.channel === 'cash' && expenseTypes.includes(e.type))
         .reduce((s, e) => s + (e.amount || 0), 0);
     const bankExpenses = periodEntries
         .filter(e => e.channel === 'bank' && expenseTypes.includes(e.type))
         .reduce((s, e) => s + (e.amount || 0), 0);
+
+    const cashExpenses = baseCashExpenses + fixedExpensesTotal;
 
     // 3. Liquidation
     const liquidated = periodEntries
@@ -250,9 +261,9 @@ export const calcLedgerInventory = (
     const totalPaidRevenue = cashIncome + bankIncome;
     const totalDebtRevenue = periodEntries.filter(e => e.type === TransactionType.DEBT_CREATE).reduce((s, e) => s + (e.amount || 0), 0);
     const totalInvoice = totalPaidRevenue + totalDebtRevenue;
-    const totalLedgerExpenses = cashExpenses + bankExpenses;
+    const totalExpenses = cashExpenses + bankExpenses;
 
-    const grossProfit = totalInvoice - totalLedgerExpenses;
+    const grossProfit = totalInvoice - totalExpenses;
     const devCut = grossProfit > 0 ? grossProfit * (pricingConfig.devPercent / 100) : 0;
     const netProfitPaid = grossProfit - devCut;
 
@@ -282,9 +293,15 @@ export const calcLedgerInventory = (
         id: generateId(), type: 'manual', archiveId: 'LEDGER-SNAP', archiveDate: new Date().toISOString(),
         periodStart: startDate, periodEnd: endDate, createdAt: Date.now(), totalPaidRevenue, totalCashRevenue: cashIncome, totalBankRevenue: bankIncome,
         totalDiscounts: 0, totalDebtRevenue, totalInvoice, totalPlaceCost: 0, totalDrinksCost: 0, totalCardsCost: 0,
-        totalExpenses: totalLedgerExpenses, totalCashExpenses: cashExpenses, totalBankExpenses: bankExpenses,
+        totalExpenses, totalCashExpenses: cashExpenses, totalBankExpenses: bankExpenses,
         netCashInPlace: getLedgerBalance(ledger, 'cash'), netBankInPlace: getLedgerBalance(ledger, 'bank'),
-        grossProfit, devCut, netProfitPaid, devPercentSnapshot: pricingConfig.devPercent, partners
+        grossProfit, devCut, netProfitPaid, devPercentSnapshot: pricingConfig.devPercent, partners,
+        expensesDetails: {
+            fixed: fixedExpenseDetails,
+            oneTime: [],
+            autoPurchases: [],
+            loanRepayments: []
+        }
     };
 };
 
